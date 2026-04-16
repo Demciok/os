@@ -1,39 +1,6 @@
-#!/bin/bash
-set -e
 
-# 1. Przygotowanie systemu
-yum check-update -y || true
-yum upgrade -y
-systemctl enable --now docker
 
-# 2. Użytkownik i narzędzia
-USERNAME=student
-if ! id "$USERNAME" &>/dev/null; then
-    useradd -m -G sudo,docker "$USERNAME"
-    echo "student:student" | chpasswd
-fi
 
-yum install -y nano unzip curl
-systemctl enable --now sshd
-
-# 3. Konfiguracja sieci (systemd-networkd)
-cat <<EOL > /etc/systemd/network/50-dhcp-en.network
-[Match]
-Name=e*
-
-[Network]
-DHCP=yes
-IPv6AcceptRA=no
-
-[DHCPv4]
-ClientIdentifier=mac
-EOL
-systemctl restart systemd-networkd
-
-# 4. Instalacja docker-compose v2.26.1
-curl -sL "https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-$(uname -s)-$(uname -m)" \
-    -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
 
 # --- ZADANIE 1: Budowa obrazu apache2 ---
 mkdir -p apache2
@@ -156,6 +123,7 @@ docker run -d -p 9000:9000 -p 9443:9443 --name portainer \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v portainer_data:/data \
     portainer/portainer-ce:latest
+
 
 # --- Zadanie I.2.A: Alpine Ping ---
 docker run -d --name alpine-ping alpine sh -c "ping wp.pl"
