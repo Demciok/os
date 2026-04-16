@@ -1,13 +1,8 @@
 #!/bin/bash
 set -e
 
-# ============================================================
-# Skrypt konfiguracyjny – Politechnika Wrocławska
-# Realizuje zadania z dokumentów 2024 i 2025
-# ============================================================
-
 # ── Aktualizacja systemu ────────────────────────────────────
-yum check-update -y || true
+yum check-update -y 
 yum upgrade -y
 
 systemctl daemon-reload
