@@ -1,31 +1,22 @@
 #!/bin/bash
 set -e
 
-# ── Aktualizacja systemu ────────────────────────────────────
-yum check-update -y 
+# 1. Przygotowanie systemu
+yum check-update -y || true
 yum upgrade -y
+systemctl enable --now docker
 
-systemctl daemon-reload
-systemctl start docker
-systemctl enable docker
-
-# ── Użytkownik student ──────────────────────────────────────
+# 2. Użytkownik i narzędzia
 USERNAME=student
-if id "$USERNAME" &>/dev/null; then
-    :
-else
+if ! id "$USERNAME" &>/dev/null; then
     useradd -m -G sudo,docker "$USERNAME"
-    yes y | passwd "$USERNAME"
+    echo "student:student" | chpasswd
 fi
 
-# ── Narzędzia ───────────────────────────────────────────────
-yum install -y nano unzip
+yum install -y nano unzip curl
+systemctl enable --now sshd
 
-if ! systemctl is-active --quiet sshd; then
-    systemctl start sshd
-fi
-
-# ── Sieć DHCP ───────────────────────────────────────────────
+# 3. Konfiguracja sieci (systemd-networkd)
 cat <<EOL > /etc/systemd/network/50-dhcp-en.network
 [Match]
 Name=e*
@@ -39,78 +30,52 @@ ClientIdentifier=mac
 EOL
 systemctl restart systemd-networkd
 
-# ── docker-compose ──────────────────────────────────────────
+# 4. Instalacja docker-compose v2.26.1
 curl -sL "https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-$(uname -s)-$(uname -m)" \
     -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 
-# ============================================================
-# ZADANIE 1 (2024): Budowa własnego obrazu apache2
-# ============================================================
+# --- ZADANIE 1: Budowa obrazu apache2 ---
 mkdir -p apache2
-
-cat <<'DOCKERFILE' > apache2/Dockerfile
-###########################################
-# Dockerfile dla obrazu z apache2
-###########################################
-# Obraz bazowy Ubuntu
+cat <<'EOF' > apache2/Dockerfile
 FROM ubuntu:latest
-MAINTAINER Student PWr
-
-# Instalacja pakietu apache2
+LABEL maintainer="Student PWr"
 RUN apt-get update && \
     apt-get install -y apache2 && \
     apt-get clean
-
-# Ustawienie ścieżki dla logów dziennika
 ENV APACHE_LOG_DIR /var/log/apache2
-
-# Uruchom serwer apache2 w pierwszym planie
 ENTRYPOINT ["/usr/sbin/apache2ctl", "-D", "FOREGROUND"]
-DOCKERFILE
+EOF
 
 docker build -t apache2 ./apache2
-docker rm -f apache2-container >/dev/null 2>&1 || true
+docker rm -f apache2-container 2>/dev/null || true
 docker run -d --name apache2-container -p 8080:80 apache2
-echo "✅ Zadanie 1 – apache2 działa na porcie 8080"
 
-# ============================================================
-# ZADANIE 2 & 3 (2024): getting-started (Python + Redis)
-# https://docs.docker.com/compose/gettingstarted/
-# ============================================================
+# --- ZADANIE 2 & 3: Python + Redis (Getting Started) ---
 mkdir -p getting-started
-
-cat <<'PYEOF' > getting-started/app.py
+cat <<'EOF' > getting-started/app.py
 import time
 import redis
 from flask import Flask
-
 app = Flask(__name__)
 cache = redis.Redis(host='redis', port=6379)
-
 def get_hit_count():
     retries = 5
     while True:
-        try:
-            return cache.incr('hits')
+        try: return cache.incr('hits')
         except redis.exceptions.ConnectionError as exc:
-            if retries == 0:
-                raise exc
+            if retries == 0: raise exc
             retries -= 1
             time.sleep(0.5)
-
 @app.route('/')
 def hello():
     count = get_hit_count()
     return f'Hello World! I have been seen {count} times.\n'
-PYEOF
+EOF
 
-cat <<'REQEOF' > getting-started/requirements.txt
-flask
-redis
-REQEOF
+echo -e "flask\nredis" > getting-started/requirements.txt
 
-cat <<'DFEOF' > getting-started/Dockerfile
+cat <<'EOF' > getting-started/Dockerfile
 FROM python:3.10-alpine
 WORKDIR /code
 ENV FLASK_APP=app.py
@@ -121,9 +86,9 @@ RUN pip install -r requirements.txt
 EXPOSE 5000
 COPY . .
 CMD ["flask", "run"]
-DFEOF
+EOF
 
-cat <<'DCEOF' > getting-started/docker-compose.yml
+cat <<'EOF' > getting-started/docker-compose.yml
 services:
   web:
     build: .
@@ -131,24 +96,16 @@ services:
       - "8000:5000"
   redis:
     image: "redis:alpine"
-DCEOF
+EOF
 
 cd getting-started
-docker-compose down -v >/dev/null 2>&1 || true
 docker-compose up -d
 cd ..
-echo "✅ Zadanie 3 – getting-started działa na porcie 8000"
 
-# ============================================================
-# ZADANIE 4 (2024): WordPress + MariaDB + phpMyAdmin
-# + ZADANIE I.2.C (2025): Ten sam stos uruchamiany też przez Portainer
-# ============================================================
+# --- ZADANIE 4: WordPress + MariaDB + phpMyAdmin ---
 mkdir -p php-db-wordpress
-
-# ETAP 1→2→3: wordpress + mariadb + phpmyadmin
-cat <<'WPEOF' > php-db-wordpress/docker-compose.yml
+cat <<'EOF' > php-db-wordpress/docker-compose.yml
 services:
-
   mariadb:
     image: mariadb:latest
     restart: always
@@ -186,57 +143,23 @@ services:
 
 volumes:
   db_data:
-WPEOF
+EOF
 
 cd php-db-wordpress
-docker-compose down -v >/dev/null 2>&1 || true
 docker-compose up -d
 cd ..
-echo "✅ Zadanie 4 – WordPress:8081 | phpMyAdmin:8082"
 
-# ============================================================
-# ZADANIE I (2025): Portainer CE – zarządzanie GUI
-# ============================================================
-docker volume create portainer_data >/dev/null 2>&1 || true
-docker rm -f portainer >/dev/null 2>&1 || true
-docker run -d \
-    -p 9000:9000 \
-    -p 9443:9443 \
-    --name portainer \
+# --- ZADANIE I (2025): Portainer CE ---
+docker volume create portainer_data
+docker run -d -p 9000:9000 -p 9443:9443 --name portainer \
     --restart=always \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v portainer_data:/data \
     portainer/portainer-ce:latest
-echo "✅ Zadanie I – Portainer CE działa na porcie 9000"
 
-# ── Zadanie I.2.A – alpine ping wp.pl ──────────────────────
-docker rm -f alpine-ping >/dev/null 2>&1 || true
+# --- Zadanie I.2.A: Alpine Ping ---
 docker run -d --name alpine-ping alpine sh -c "ping wp.pl"
-echo "✅ Zadanie I.2.A – alpine-ping uruchomiony"
 
-# ── Zadanie I.2.C – stos WP przez Portainer ────────────────
-# Stos wordpress+mariadb+phpmyadmin jest już uruchomiony przez
-# docker-compose powyżej. Aby zademonstrować go PRZEZ Portainer:
-# 1. Otwórz http://<IP>:9000
-# 2. Wybierz środowisko: local
-# 3. Przejdź do Stacks → Add stack
-# 4. Wklej zawartość php-db-wordpress/docker-compose.yml
-# Uwaga: najpierw zatrzymaj istniejący stos aby uniknąć konfliktu portów:
-#   cd php-db-wordpress && docker-compose down -v && cd ..
-
-# ── Podsumowanie ────────────────────────────────────────────
-echo ""
-echo "============================================================"
-docker version
-echo "------------------------------------------------------------"
-docker images
-echo "------------------------------------------------------------"
-docker ps
-echo "============================================================"
-echo "🌐 Portainer        → http://localhost:9000"
-echo "🌐 Apache2          → http://localhost:8080"
-echo "🌐 Getting-started  → http://localhost:8000"
-echo "🌐 WordPress        → http://localhost:8081"
-echo "🌐 phpMyAdmin       → http://localhost:8082"
-echo "============================================================"
-echo "🚀 Koniec konfiguracji"
+# Podsumowanie stanów
+echo "Konfiguracja zakończona."
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
