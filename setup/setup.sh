@@ -19,7 +19,6 @@ fi
 
 yum install -y nano unzip
 
-systemctl status sshd
 
 if ! systemctl is-active --quiet sshd; then
     systemctl start sshd
