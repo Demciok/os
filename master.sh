@@ -56,8 +56,11 @@ docker run -d --name alpine-ping alpine sh -c "ping wp.pl"
 docker build -t apache2 ./apache2
 docker run -d --name apache2-container -p 8080:80 apache2
 
+
+echo "getting"
 cd getting-started && docker-compose up -d && cd ..
 
+echo "php"
 cd php-db-wordpress && docker-compose up -d && cd ..
 
 docker version
@@ -65,4 +68,6 @@ docker images
 sudo -u "$USERNAME" ls -a
 
 echo "Portainer: http://localhost:9000"
+echo "apache 8080"
+echo "getting-started 8000"
 echo "Koniec 🚀"
