@@ -1,6 +1,10 @@
+#!/bin/bash
 
 
-
+# 4. Instalacja docker-compose v2.26.1
+sudo curl -sL "https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-$(uname -s)-$(uname -m)" \
+    -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
 
 # --- ZADANIE 1: Budowa obrazu apache2 ---
 mkdir -p apache2
